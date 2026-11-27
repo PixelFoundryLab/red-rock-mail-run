@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Red Rock Mail Run — a 3D flight game</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1210; font-family: "Segoe UI", system-ui, sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .mono { font-family: "Consolas", "SF Mono", Menlo, monospace; }
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #d8f6ff; text-shadow: 0 0 8px rgba(60, 200, 255, 0.9), 0 0 2px rgba(60, 200, 255, 0.9); }
+  .panel { background: rgba(6, 18, 28, 0.55); border: 1px solid rgba(90, 210, 255, 0.45); border-radius: 8px; padding: 8px 12px; backdrop-filter: blur(2px); }
+  #hud-left { position: absolute; top: 14px; left: 14px; line-height: 1.55; }
+  #hud-left .lbl { font-size: 10px; letter-spacing: 2px; color: #8fd8ff; opacity: 0.85; }
+  #hud-left .val { font-size: 21px; font-weight: 700; }
+  #hud-right { position: absolute; top: 14px; right: 14px; text-align: right; line-height: 1.55; }
+  #hud-right .lbl { font-size: 10px; letter-spacing: 2px; color: #ffd28a; opacity: 0.9; }
+  #hud-right .val { font-size: 21px; font-weight: 700; color: #ffe9b0; text-shadow: 0 0 8px rgba(255, 190, 80, 0.9); }
+  #hud-lives { font-size: 16px; letter-spacing: 1px; color: #ff8a7a; text-shadow: 0 0 8px rgba(255, 90, 60, 0.9); }
+  #hud-msg { position: absolute; top: 20%; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 800; letter-spacing: 2px; color: #fff3c4; text-shadow: 0 0 14px rgba(255, 180, 60, 0.95), 0 2px 4px rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
+  /* Fuel + hull, lower left above the horizon gauge */
+  #hud-systems { position: absolute; bottom: 128px; left: 18px; width: 210px; }
+  #hud-systems .lbl { font-size: 10px; letter-spacing: 2px; color: #8fd8ff; margin-bottom: 2px; }
+  #hud-systems .bar { height: 10px; border: 1px solid rgba(90, 210, 255, 0.6); border-radius: 5px; overflow: hidden; background: rgba(6, 18, 28, 0.6); margin-bottom: 6px; }
+  #hud-systems .fill { height: 100%; width: 100%; }
+  #hud-systems .row { display: flex; justify-content: space-between; font-size: 12px; }
+  #hud-wind { position: absolute; bottom: 128px; right: 18px; font-size: 14px; color: #aee6ff; }
+  /* Route strip: the whole mail route in order, bottom centre */
+  #hud-route { position: absolute; bottom: 62px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #hud-route-strip { display: flex; gap: 5px; justify-content: center; margin-bottom: 4px; }
+  .route-box { display: inline-block; min-width: 24px; height: 24px; line-height: 24px; text-align: center; font-size: 13px; font-weight: 700; color: #bfe9ff; background: rgba(6, 18, 28, 0.6); border: 1px solid rgba(90, 210, 255, 0.5); border-radius: 4px; }
+  .route-box.current { background: #25e6ff; color: #06222e; border-color: #25e6ff; box-shadow: 0 0 10px rgba(37, 230, 255, 0.9); }
+  .route-box.done { background: #2fae6e; color: #062b18; border-color: #2fae6e; }
+  #hud-mission-next { font-size: 13px; letter-spacing: 1px; color: #ffe9b0; text-shadow: 0 0 8px rgba(255, 190, 80, 0.9); }
+  #hud-throttle { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); width: 240px; }
+  #hud-throttle .lbl { font-size: 10px; letter-spacing: 2px; color: #8fd8ff; text-align: center; margin-bottom: 4px; }
+  #hud-throttle-bar { height: 10px; border: 1px solid rgba(90, 210, 255, 0.6); border-radius: 5px; overflow: hidden; background: rgba(6, 18, 28, 0.6); }
+  #hud-throttle-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2fae6e, #ffd23e, #ff7a2a); box-shadow: 0 0 10px rgba(255, 170, 60, 0.8); }
+  #hud-horizon { position: absolute; bottom: 18px; left: 18px; width: 92px; height: 92px; border-radius: 50%; border: 2px solid rgba(140, 220, 255, 0.7); overflow: hidden; background: #0a2030; box-shadow: 0 0 12px rgba(60, 200, 255, 0.5); }
+  #hud-horizon-inner { position: absolute; left: -50%; top: -50%; width: 200%; height: 200%; }
+  #hud-horizon-inner .sky { position: absolute; left: 0; top: 0; width: 100%; height: 50%; background: linear-gradient(#7ec8f0, #cfeaff); }
+  #hud-horizon-inner .ground { position: absolute; left: 0; top: 50%; width: 100%; height: 50%; background: linear-gradient(#8a5a34, #5a3a22); }
+  #hud-horizon-inner .line { position: absolute; left: 0; top: 50%; width: 100%; height: 2px; background: #fff; margin-top: -1px; }
+  #hud-horizon .plane-mark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 14px solid #ffd23e; filter: drop-shadow(0 0 4px rgba(0,0,0,0.9)); }
+  #hud-ring-marker { position: absolute; font-size: 30px; color: #25e6ff; text-shadow: 0 0 12px rgba(37, 230, 255, 1); opacity: 0; pointer-events: none; }
+  #hud-ring-dist { position: absolute; font-size: 13px; color: #aef3ff; text-shadow: 0 0 8px rgba(37, 230, 255, 0.9); opacity: 0; transform: translateX(-50%); pointer-events: none; }
+  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: rgba(255, 255, 255, 0.85); font-size: 18px; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+  /* Full-screen overlays */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #f5f0e6; background: radial-gradient(ellipse at center, rgba(10, 8, 16, 0.25) 0%, rgba(10, 8, 16, 0.72) 100%); z-index: 5; }
+  .screen[hidden] { display: none; }
+  .screen h1 { font-size: 60px; margin: 0 0 6px; letter-spacing: 5px; color: #ffd23e; text-shadow: 0 0 24px rgba(255, 170, 40, 0.8), 0 4px 8px rgba(0,0,0,0.7); }
+  .screen h2 { font-size: 15px; margin: 0 0 22px; letter-spacing: 4px; color: #aee6ff; font-weight: 600; }
+  .screen p { font-size: 15px; line-height: 1.9; margin: 4px 0; color: #e8e2d4; }
+  .screen .keys { color: #ffd28a; font-weight: 700; }
+  .screen .big { font-size: 20px; margin-top: 18px; color: #fff; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .screen .score-line { font-size: 22px; margin-top: 10px; color: #ffe9b0; }
+  .screen .sub { font-size: 13px; color: #b8c4c8; margin-top: 14px; }
+  .screen .detail { font-size: 14px; color: #d8e8f0; max-width: 640px; margin-top: 8px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Red Rock Mail Run: fly a mail plane through glowing gates over a river canyon, drop the mail at the outposts, and land on the far runway"></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+
+<div id="hud">
+  <div id="hud-left" class="panel mono">
+    <div><span class="lbl">ALT&nbsp;&nbsp;</span><span class="val" id="hud-alt">0 FT AGL</span></div>
+    <div><span class="lbl">SPD&nbsp;&nbsp;</span><span class="val" id="hud-spd">0 KT</span></div>
+    <div><span class="lbl">HDG&nbsp;&nbsp;</span><span class="val" id="hud-hdg">000° N</span></div>
+  </div>
+  <div id="hud-right" class="panel mono">
+    <div><span class="lbl">SCORE&nbsp;&nbsp;</span><span class="val" id="hud-score">000000</span></div>
+    <div><span class="lbl">ROUTE&nbsp;&nbsp;</span><span class="val" id="hud-ring">GATE 1 · 0/11</span></div>
+    <div><span class="lbl">TIME&nbsp;&nbsp;</span><span class="val" id="hud-timer">00:00</span></div>
+    <div><span class="lbl">DAY&nbsp;&nbsp;</span><span class="val" id="hud-day">DAY 1</span></div>
+    <div id="hud-lives">LIVES 3</div>
+  </div>
+  <div id="crosshair">＋</div>
+  <div id="hud-msg"></div>
+  <div id="hud-ring-marker">◎</div>
+  <div id="hud-ring-dist" class="mono"></div>
+  <div id="hud-systems" class="panel mono">
+    <div class="row"><span class="lbl" id="hud-fuel-text">FUEL 100%</span></div>
+    <div class="bar"><div class="fill" id="hud-fuel-fill" style="background:#2fae6e"></div></div>
+    <div class="row"><span class="lbl" id="hud-hull-text">HULL 100%</span></div>
+    <div class="bar"><div class="fill" id="hud-hull-fill" style="background:#2fae6e"></div></div>
+  </div>
+  <div id="hud-wind" class="panel mono">WIND 0 KT N</div>
+  <div id="hud-route">
+    <div id="hud-route-strip"></div>
+    <div id="hud-mission-next" class="mono">NEXT: GATE 1 — FLY THROUGH THE GATE</div>
+  </div>
+  <div id="hud-throttle">
+    <div class="lbl mono">THROTTLE — SHIFT UP / CTRL DOWN · SPACE BOOST</div>
+    <div id="hud-throttle-bar"><div id="hud-throttle-fill"></div></div>
+  </div>
+  <div id="hud-horizon"><div id="hud-horizon-inner"><div class="sky"></div><div class="ground"></div><div class="line"></div></div><div class="plane-mark"></div></div>
+</div>
+
+<div id="screen-title" class="screen">
+  <h1>RED ROCK MAIL RUN</h1>
+  <h2>A BUSH PILOT'S SUNSET MAIL RUN THROUGH RED ROCK CANYON</h2>
+  <p>The outposts are waiting on their mail. Fly the <b>8 glowing gates</b> down the river canyon,</p>
+  <p>drop the mail low over <b>Cedar, Juniper and Coyote outposts</b>, then land on the far runway.</p>
+  <p>Watch your <b>fuel</b> — full throttle drinks it — and your <b>hull</b>: the canyon walls bite.</p>
+  <p>Land on a runway to refuel and repair. Finish a day to earn your rank; Day 2 blows harder.</p>
+  <p><span class="keys">MOUSE / ARROWS / WASD</span> steer &nbsp;·&nbsp; <span class="keys">SHIFT</span> throttle up &nbsp;·&nbsp; <span class="keys">CTRL</span> throttle down</p>
+  <p><span class="keys">SPACE</span> afterburner &nbsp;·&nbsp; <span class="keys">P</span> pause &nbsp;·&nbsp; <span class="keys">M</span> mute</p>
+  <p class="big">CLICK OR PRESS ENTER TO FLY</p>
+  <p class="sub" id="title-best"></p>
+</div>
+
+<div id="screen-paused" class="screen" hidden>
+  <h1>PAUSED</h1>
+  <p class="big">PRESS P OR CLICK TO RESUME</p>
+</div>
+
+<div id="screen-over" class="screen" hidden>
+  <h1>MISSION FAILED</h1>
+  <p>The canyon keeps its mail planes. The outposts are still waiting.</p>
+  <p class="score-line mono" id="over-score"></p>
+  <p class="big">CLICK OR PRESS ENTER TO FLY AGAIN</p>
+</div>
+
+<div id="screen-win" class="screen" hidden>
+  <h1>MISSION COMPLETE</h1>
+  <p>The mail is through, and you brought the plane home. Well flown, pilot.</p>
+  <p class="score-line mono" id="win-score"></p>
+  <p class="detail" id="win-detail"></p>
+  <p class="big">CLICK OR PRESS ENTER TO FLY AGAIN · PRESS D FOR THE NEXT DAY</p>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
